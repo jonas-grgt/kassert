@@ -42,13 +42,13 @@ public class TopicAssertions<K, V> {
     }
 
     /**
-     * Asserts that the topic contains exactly the specified number of records for the duration of the timeout.
+     * Asserts that the topic contains exactly the specified number of records at the end of the duration of the timeout.
      * <p>
      * The timeout can be set using the {@link Kassertions#within(Duration)} method. If no timeout is specified, the
      * default timeout of {@link Kassertions#DEFAULT_TIMEOUT} (10 seconds) is used.
      * <p>
      * This method ensures that the consumer continues polling until the timeout is reached, even if the assertion
-     * passes earlier. This behavior is controlled by setting the `consumeUntilTimeout` flag to `true`.
+     * passes earlier.
      *
      * @param size
      *         the exact number of records expected in the topic
