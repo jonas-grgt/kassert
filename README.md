@@ -3,7 +3,9 @@
 ```java
 Kassertions.consume("topic", consumer)
     .within(Duration.ofSeconds(5))
-        .untilAsserted(t -> t.contains(expectedKey, expectedValue));
+        .untilAsserted(t -> t
+            .hasSize(10)
+            .contains(expectedKey, expectedValue));
 ```
 
 # Available Assertions
@@ -11,10 +13,10 @@ Kassertions.consume("topic", consumer)
 | Method                                                      | description                                                                                                        |
 |-------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
 | `contains(K key, V value)`                                  | Asserts at least one record matches both key and value.                                                            |
-| `containsKey(K key)`                                        | Asserts a record with the given key is present.                                                                    |
-| `containsValue(V value)`                                    | TODO                                                                                                               |
-| `containsExactly(List<ConsumerRecord<K, V>> expected)`      | TODO                                                                                                               |
-| `containsInAnyOrder(List<ConsumerRecord<K, V>> expected)`   | TODO                                                                                                               |
+| `containsKey(K key)`                                        | Asserts a record with the given key is at least once present.                                                      |
+| `containsValue(V value)`                                    | Asserts a record with a given value is at least once present.                                                      |
+| `containsExactly(List<V> expected)`                         | TODO                                                                                                               |
+| `containsInAnyOrder(List<V> expected)`                      | TODO                                                                                                               |
 | `matches(Predicate<List<ConsumerRecord<K, V>>> predicate)`  | TODO                                                                                                               |
 | `hasKeySatisfying(Predicate<K> predicate)`                  | TODO                                                                                                               |
 | `hasValueSatisfying(Predicate<V> predicate)`                | TODO                                                                                                               |

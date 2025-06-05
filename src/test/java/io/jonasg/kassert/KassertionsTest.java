@@ -113,6 +113,36 @@ class KassertionsTest implements KafkaContainerSupport {
     }
 
     @Nested
+    class ContainsValue {
+
+        @Test
+        void assertsTopicContainsValue() throws ExecutionException, InterruptedException, TimeoutException {
+            var value = UUID.randomUUID().toString();
+            producer.send(new ProducerRecord<>("contains-value-topic", "key", value))
+                    .get(5, TimeUnit.SECONDS);
+
+            Kassertions.consume("contains-value-topic", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsValue(value));
+        }
+
+        @Test
+        void failWhenTopicDoesNotContainValue() throws ExecutionException, InterruptedException, TimeoutException {
+            var value = UUID.randomUUID().toString();
+            producer.send(new ProducerRecord<>("never-contains-value-topic", value, "non-matching-value"))
+                    .get(5, TimeUnit.SECONDS);
+
+            assertThatThrownBy(() ->
+                    Kassertions.consume("never-contains-topic", consumer)
+                            .within(Duration.ofSeconds(5))
+                            .untilAsserted(t -> t.containsValue(value))
+            ).hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
+                                       + "'never-contains-topic'. Failed assertions: Expected topic to contain "
+                                       + "value '%s', but was not found.", value));
+        }
+    }
+
+    @Nested
     class HasSize {
 
         @Test

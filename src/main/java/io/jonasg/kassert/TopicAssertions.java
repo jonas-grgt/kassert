@@ -76,13 +76,25 @@ public class TopicAssertions<K, V> {
      *         the key to check for
      * @throws TopicAssertionError if the topic does not contain a record with the specified key
      */
-    public void containsKey(V key) {
+    public TopicAssertions<K, V> containsKey(V key) {
         this.assertions.add(
                 new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key)),
                         (__) -> new TopicAssertionError(
                                 String.format("Expected topic to contain key '%s', but was not found.", key))
+                )
+        );
+        return this;
+    }
+
+    public void containsValue(V value) {
+        this.assertions.add(
+                new TopicAssertion<>(
+                        r -> r.stream()
+                                .anyMatch(record -> Objects.equals(record.value(), value)),
+                        (__) -> new TopicAssertionError(
+                                String.format("Expected topic to contain value '%s', but was not found.", value))
                 )
         );
     }
