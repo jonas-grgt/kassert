@@ -9,7 +9,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 public class TopicAssertions<K, V> {
 
-    private final List<KAssertionHolder<K, V>> assertions = new ArrayList<>();
+    private final List<TopicAssertion<K, V>> assertions = new ArrayList<>();
 
     /**
      * Asserts that the topic contains at least a record with the specified key and value.
@@ -23,7 +23,7 @@ public class TopicAssertions<K, V> {
     @SuppressWarnings("UnusedReturnValue")
     public TopicAssertions<K, V> contains(K key, V value) {
         this.assertions.add(
-                new KAssertionHolder<>(
+                new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key) &&
                                                     Objects.equals(record.value(), value)),
@@ -44,7 +44,7 @@ public class TopicAssertions<K, V> {
      */
     public void containsKey(V key) {
         this.assertions.add(
-                new KAssertionHolder<>(
+                new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key)),
                         () -> new TopicAssertionError(
