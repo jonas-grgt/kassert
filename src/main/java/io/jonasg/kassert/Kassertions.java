@@ -15,11 +15,13 @@ public class Kassertions<K, V> {
 
     private static final Logger logger = LoggerFactory.getLogger(Kassertions.class);
 
+    static final long DEFAULT_TIMEOUT = 10_000;
+
     private final String topic;
 
     private final Consumer<K, V> consumer;
 
-    private long timeout = 10_000;
+    private long timeout = DEFAULT_TIMEOUT;
 
     public static <K, V> Kassertions<K, V> consume(String topic, Consumer<K, V> consumer) {
         return new Kassertions<>(topic, consumer);
@@ -50,6 +52,9 @@ public class Kassertions<K, V> {
 
         List<ConsumerRecord<K, V>> consumed = new ArrayList<>();
 
+        var topicAssertions = new TopicAssertions<K,V>();
+        topicAssertionBuilder.build(topicAssertions);
+
         while (true) {
             long startPoll = System.currentTimeMillis();
 
@@ -62,12 +67,9 @@ public class Kassertions<K, V> {
                             .collect(Collectors.toList())
             );
 
-            var topicAssertions = new TopicAssertions<K,V>();
-            topicAssertionBuilder.build(topicAssertions);
-
             var errors = topicAssertions.assertRecords(consumed);
 
-            if (errors.isEmpty()) {
+            if (errors.isEmpty() && !topicAssertions.shouldConsumeUntilTimeout()) {
                 logger.info("All assertions passed for topic: {}", this.topic);
                 this.consumer.unsubscribe();
                 break;
@@ -76,6 +78,13 @@ public class Kassertions<K, V> {
             remaining -= System.currentTimeMillis() - startPoll;
             if (remaining <= 0) {
                 this.consumer.unsubscribe();
+
+                // Some assertions such as hasSize() require to consume until timeout has been reached.
+                // If by then no errors have been found, we can exit without throwing an error.
+                if (errors.isEmpty() && topicAssertions.shouldConsumeUntilTimeout()) {
+                    break;
+                }
+
                 throw new TopicAssertionError(
                         String.format("Timeout after %d ms while waiting for assertions on topic '%s'. " +
                                       "Failed assertions: %s", this.timeout, this.topic,

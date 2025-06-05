@@ -1,5 +1,6 @@
 package io.jonasg.kassert;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -11,6 +12,8 @@ public class TopicAssertions<K, V> {
 
     private final List<TopicAssertion<K, V>> assertions = new ArrayList<>();
 
+    private boolean consumeUntilTimeout;
+
     /**
      * Asserts that the topic contains at least a record with the specified key and value.
      *
@@ -19,6 +22,8 @@ public class TopicAssertions<K, V> {
      * @param value
      *         the value to check for
      * @return {@link TopicAssertions} for chaining assertions
+     * @throws TopicAssertionError
+     *         if the topic does not contain a record with the specified key and value
      */
     @SuppressWarnings("UnusedReturnValue")
     public TopicAssertions<K, V> contains(K key, V value) {
@@ -27,10 +32,38 @@ public class TopicAssertions<K, V> {
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key) &&
                                                     Objects.equals(record.value(), value)),
-                        () -> new TopicAssertionError(
+                        (__) -> new TopicAssertionError(
                                 String.format(
                                         "Expected topic to contain key '%s' with value '%s', but was not found.",
                                         key, value))
+                )
+        );
+        return this;
+    }
+
+    /**
+     * Asserts that the topic contains exactly the specified number of records for the duration of the timeout.
+     * <p>
+     * The timeout can be set using the {@link Kassertions#within(Duration)} method. If no timeout is specified, the
+     * default timeout of {@link Kassertions#DEFAULT_TIMEOUT} (10 seconds) is used.
+     * <p>
+     * This method ensures that the consumer continues polling until the timeout is reached, even if the assertion
+     * passes earlier. This behavior is controlled by setting the `consumeUntilTimeout` flag to `true`.
+     *
+     * @param size
+     *         the exact number of records expected in the topic
+     * @return {@link TopicAssertions} for chaining additional assertions
+     * @throws TopicAssertionError
+     *         if the number of records in the topic does not match the expected size
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public TopicAssertions<K, V> hasSize(int size) {
+        this.consumeUntilTimeout = true;
+        this.assertions.add(
+                new TopicAssertion<>(
+                        r -> r.size() == size,
+                        (r) -> new TopicAssertionError(
+                                String.format("Expected topic to contain %d records, but found %d.", size, r.size()))
                 )
         );
         return this;
@@ -41,13 +74,14 @@ public class TopicAssertions<K, V> {
      *
      * @param key
      *         the key to check for
+     * @throws TopicAssertionError if the topic does not contain a record with the specified key
      */
     public void containsKey(V key) {
         this.assertions.add(
                 new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key)),
-                        () -> new TopicAssertionError(
+                        (__) -> new TopicAssertionError(
                                 String.format("Expected topic to contain key '%s', but was not found.", key))
                 )
         );
@@ -59,10 +93,14 @@ public class TopicAssertions<K, V> {
                     if (ka.assertion().apply(consumed)) {
                         return null;
                     } else {
-                        return ka.errorSupplier().get();
+                        return ka.errorSupplier().apply(consumed);
                     }
                 })
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+    }
+
+    public boolean shouldConsumeUntilTimeout() {
+        return consumeUntilTimeout;
     }
 }
