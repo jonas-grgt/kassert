@@ -58,7 +58,7 @@ public class Kassertions<K, V> {
         while (true) {
             long startPoll = System.currentTimeMillis();
 
-            logger.info("Polling ...");
+            logger.debug("Polling ...");
 
             long pollDuration = Math.min(remaining, 1000);
             var records = this.consumer.poll(Duration.ofMillis(pollDuration));
@@ -70,7 +70,7 @@ public class Kassertions<K, V> {
             var errors = topicAssertions.assertRecords(consumed);
 
             if (errors.isEmpty() && !topicAssertions.shouldConsumeUntilTimeout()) {
-                logger.info("All assertions passed for topic: {}", this.topic);
+                logger.debug("All assertions passed for topic: {}", this.topic);
                 this.consumer.unsubscribe();
                 break;
             }
