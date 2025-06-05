@@ -32,7 +32,7 @@ public class TopicAssertions<K, V> {
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key) &&
                                                     Objects.equals(record.value(), value)),
-                        (__) -> new TopicAssertionError(
+                        (r, t) -> new TopicAssertionError(
                                 String.format(
                                         "Expected topic to contain key '%s' with value '%s', but was not found.",
                                         key, value))
@@ -62,11 +62,25 @@ public class TopicAssertions<K, V> {
         this.assertions.add(
                 new TopicAssertion<>(
                         r -> r.size() == size,
-                        (r) -> new TopicAssertionError(
+                        (r, t) -> new TopicAssertionError(
                                 String.format("Expected topic to contain %d records, but found %d.", size, r.size()))
                 )
         );
         return this;
+    }
+
+    /**
+     * Asserts that the topic contains more than n records. Polling stops as soon as this condition is met, even before the timeout.
+     * @param size the minimum number of records expected in the topic
+     */
+    public void hasSizeGreaterThan(int size) {
+        this.assertions.add(
+                new TopicAssertion<>(
+                        r -> r.size() > size,
+                        (r, t) -> new TopicAssertionError(
+                                String.format("Expected topic to contain more than %d records, but only found %d after %d ms.", size, r.size(), t))
+                )
+        );
     }
 
     /**
@@ -81,7 +95,7 @@ public class TopicAssertions<K, V> {
                 new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key)),
-                        (__) -> new TopicAssertionError(
+                        (r, t) -> new TopicAssertionError(
                                 String.format("Expected topic to contain key '%s', but was not found.", key))
                 )
         );
@@ -93,19 +107,19 @@ public class TopicAssertions<K, V> {
                 new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.value(), value)),
-                        (__) -> new TopicAssertionError(
+                        (r, t) -> new TopicAssertionError(
                                 String.format("Expected topic to contain value '%s', but was not found.", value))
                 )
         );
     }
 
-    List<TopicAssertionError> assertRecords(List<ConsumerRecord<K, V>> consumed) {
+    List<TopicAssertionError> assertRecords(List<ConsumerRecord<K, V>> consumed, long timeout) {
         return assertions.stream()
                 .map(ka -> {
                     if (ka.assertion().apply(consumed)) {
                         return null;
                     } else {
-                        return ka.errorSupplier().apply(consumed);
+                        return ka.errorSupplier().apply(consumed, timeout);
                     }
                 })
                 .filter(Objects::nonNull)

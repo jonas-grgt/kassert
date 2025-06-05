@@ -218,4 +218,79 @@ class KassertionsTest implements KafkaContainerSupport {
         }
     }
 
+    @Nested
+    class HasSizeGreaterThan {
+
+        @Test
+        void assertsTopicHasSizeGreaterThan() {
+            var key = UUID.randomUUID().toString();
+            var topic = "has-size-greater-then-topic-" + key;
+            IntStream.range(0, 10)
+                    .forEach(i -> {
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(i * 200L);
+                                producer.send(new ProducerRecord<>(topic, key, "value"))
+                                        .get(5, TimeUnit.SECONDS);
+                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }).start();
+                    });
+
+            Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSizeGreaterThan(9));
+        }
+
+        @Test
+        void failWhenTopicHasLessThanMinExpectedSize() {
+            var key = UUID.randomUUID().toString();
+            var topic = "does-not-has-min-size-topic-" + key;
+            IntStream.range(0, 10)
+                    .forEach(i ->
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(i * 200L);
+                                    producer.send(new ProducerRecord<>(topic, key, "value"))
+                                            .get(5, TimeUnit.SECONDS);
+                                } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }).start());
+
+            assertThatThrownBy(() ->
+                    Kassertions.consume(topic, consumer)
+                            .within(Duration.ofSeconds(10))
+                            .untilAsserted(t -> t.hasSizeGreaterThan(20))
+            ).hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                                       + "'%s'. Failed assertions: Expected topic to contain "
+                                       + "more than 20 records, but only found 10 after 10000 ms.", topic));
+        }
+
+        @Test
+        void failWhenTopicHasEqualNumberOfRecordsAsParam() {
+            var key = UUID.randomUUID().toString();
+            var topic = "equal-numer-as-param-topic-" + key;
+            IntStream.range(0, 10)
+                    .forEach(i ->
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(i * 200L);
+                                    producer.send(new ProducerRecord<>(topic, key, "value"))
+                                            .get(5, TimeUnit.SECONDS);
+                                } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }).start());
+
+            assertThatThrownBy(() ->
+                    Kassertions.consume(topic, consumer)
+                            .within(Duration.ofSeconds(10))
+                            .untilAsserted(t -> t.hasSizeGreaterThan(10))
+            ).hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                                       + "'%s'. Failed assertions: Expected topic to contain "
+                                       + "more than 10 records, but only found 10 after 10000 ms.", topic));
+        }
+    }
 }

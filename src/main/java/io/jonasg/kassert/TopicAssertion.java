@@ -1,6 +1,7 @@
 package io.jonasg.kassert;
 
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -9,11 +10,11 @@ class TopicAssertion<K, V> {
 
     private final Function<List<ConsumerRecord<K, V>>, Boolean> assertion;
 
-    private final Function<List<ConsumerRecord<K, V>>, TopicAssertionError> errorSupplier;
+    private final BiFunction<List<ConsumerRecord<K, V>>, Long, TopicAssertionError> errorSupplier;
 
     public TopicAssertion(
             Function<List<ConsumerRecord<K, V>>, Boolean> assertion,
-            Function<List<ConsumerRecord<K, V>>, TopicAssertionError> errorSupplier) {
+            BiFunction<List<ConsumerRecord<K, V>>, Long, TopicAssertionError> errorSupplier) {
         this.assertion = assertion;
         this.errorSupplier = errorSupplier;
     }
@@ -22,7 +23,7 @@ class TopicAssertion<K, V> {
         return assertion;
     }
 
-    public Function<List<ConsumerRecord<K, V>>, TopicAssertionError> errorSupplier() {
+    public BiFunction<List<ConsumerRecord<K, V>>, Long, TopicAssertionError> errorSupplier() {
         return errorSupplier;
     }
 }

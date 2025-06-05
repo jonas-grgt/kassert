@@ -67,7 +67,9 @@ public class Kassertions<K, V> {
                             .collect(Collectors.toList())
             );
 
-            var errors = topicAssertions.assertRecords(consumed);
+            logger.debug("Polled {} records", records.count());
+
+            var errors = topicAssertions.assertRecords(consumed, timeout);
 
             if (errors.isEmpty() && !topicAssertions.shouldConsumeUntilTimeout()) {
                 logger.debug("All assertions passed for topic: {}", this.topic);
