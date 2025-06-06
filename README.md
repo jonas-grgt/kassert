@@ -18,14 +18,16 @@ Kassertions.consume("topic", consumer)
 This also applies to `hasSizeGreaterThan(int n)`, `hasSizeLessThan(int n)` and `isEmpty()`.
 
 # Available Assertions
-```java
+
 | Method                                                      | description                                                                                                                   |
 |-------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | `contains(K key, V value)`                                  | Asserts at least one record matches both key and value.                                                                       |
 | `containsKey(K key)`                                        | Asserts a record with the given key is at least once present.                                                                 |
 | `containsValue(V value)`                                    | Asserts a record with a given value is at least once present.                                                                 |
-| `containsExactly(List<V> expected)`                         | TODO                                                                                                                          |
-| `containsInAnyOrder(List<V> expected)`                      | TODO                                                                                                                          |
+| `containsExactlyValues(List<V> expected)`                   | TODO                                                                                                                          |
+| `containsExactlyKeys(List<V> expected)`                     | TODO                                                                                                                          |
+| `containsKeysInAnyOrder(List<V> expected)`                  | Asserts a list of records with a given key is present in any order.                                                           |
+| `containsValuesInAnyOrder(List<V> expected)`                | Asserts a list of records with a given value is present in any order.                                                         |
 | `matches(Predicate<List<ConsumerRecord<K, V>>> predicate)`  | TODO                                                                                                                          |
 | `hasKeySatisfying(Predicate<K> predicate)`                  | TODO                                                                                                                          |
 | `hasValueSatisfying(Predicate<V> predicate)`                | TODO                                                                                                                          |

@@ -101,7 +101,7 @@
 						<configuration>
 							<jreleaser>
 								<project>
-									<description>avdl-to-avsc-maven-plugin</description>
+									<description>kafka assertions</description>
 									<links>
 										<homepage>https://github.com/jonas-grgt/kassert</homepage>
 									</links>

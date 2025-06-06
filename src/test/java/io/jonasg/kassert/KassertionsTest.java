@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -152,6 +153,80 @@ class KassertionsTest implements KafkaContainerSupport {
     }
 
     @Nested
+    class ContainsInAnyOrder {
+
+        @Test
+        void assertsTopicContainsKeysInAnyOrder() throws ExecutionException, InterruptedException, TimeoutException {
+            var key1 = UUID.randomUUID().toString();
+            var key2 = UUID.randomUUID().toString();
+            var key3 = UUID.randomUUID().toString();
+            producer.send(new ProducerRecord<>("contains-keys-in-any-order", key1, "value"))
+                    .get(5, TimeUnit.SECONDS);
+            producer.send(new ProducerRecord<>("contains-keys-in-any-order", key2, "value"))
+                    .get(5, TimeUnit.SECONDS);
+            producer.send(new ProducerRecord<>("contains-keys-in-any-order", key3, "value"))
+                    .get(5, TimeUnit.SECONDS);
+
+            Kassertions.consume("contains-keys-in-any-order", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsKeysInAnyOrder(List.of(key1, key3, key2)));
+        }
+
+        @Test
+        void failWhenTopicDoesNotContainKeysInAnyOrder()
+                throws ExecutionException, InterruptedException, TimeoutException {
+            var key1 = UUID.randomUUID().toString();
+            var key2 = UUID.randomUUID().toString();
+            var topic = "contains-values-in-any-order-" + key1;
+            producer.send(new ProducerRecord<>(topic, key1, "value"))
+                    .get(5, TimeUnit.SECONDS);
+
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsKeysInAnyOrder(List.of(key1, key2))))
+                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic " +
+                            "'%1$s'. Failed assertions: Expected topic to " +
+                            "contain keys [%2$s, %3$s] in any order, but [%3$s] could not be found in received keys [%2$s]",
+                            topic, key1, key2));
+        }
+
+        @Test
+        void assertsTopicContainsValuesInAnyOrder() throws ExecutionException, InterruptedException, TimeoutException {
+            var value1 = UUID.randomUUID().toString();
+            var value2 = UUID.randomUUID().toString();
+            var value3 = UUID.randomUUID().toString();
+            producer.send(new ProducerRecord<>("contains-values-in-any-order", "key", value1))
+                    .get(5, TimeUnit.SECONDS);
+            producer.send(new ProducerRecord<>("contains-values-in-any-order", "key", value2))
+                    .get(5, TimeUnit.SECONDS);
+            producer.send(new ProducerRecord<>("contains-values-in-any-order", "key", value3))
+                    .get(5, TimeUnit.SECONDS);
+
+            Kassertions.consume("contains-values-in-any-order", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsValuesInAnyOrder(List.of(value1, value3, value2)));
+        }
+
+        @Test
+        void failWhenTopicDoesNotContainValuesInAnyOrder()
+                throws ExecutionException, InterruptedException, TimeoutException {
+            var value1 = UUID.randomUUID().toString();
+            var value2 = UUID.randomUUID().toString();
+            var topic = "contains-values-in-any-order-" + value1;
+            producer.send(new ProducerRecord<>(topic, "key", value1))
+                    .get(5, TimeUnit.SECONDS);
+
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsValuesInAnyOrder(List.of(value1, value2))))
+                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic " +
+                            "'%1$s'. Failed assertions: Expected topic to " +
+                            "contain values [%2$s, %3$s] in any order, but [%3$s] could not be found in received values [%2$s]",
+                            topic, value1, value2));
+        }
+    }
+
+    @Nested
     class IsEmpty {
 
         @Test
@@ -187,6 +262,7 @@ class KassertionsTest implements KafkaContainerSupport {
                             + "'%s'. Failed assertions: "
                             + "Expected topic to be empty, but found 5 records.", topic));
         }
+
     }
 
     @Nested
