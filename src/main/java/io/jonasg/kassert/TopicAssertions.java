@@ -1,12 +1,12 @@
 package io.jonasg.kassert;
 
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
-
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 public class TopicAssertions<K, V> {
 
@@ -15,15 +15,17 @@ public class TopicAssertions<K, V> {
     private boolean consumeUntilTimeout;
 
     /**
-     * Asserts that the topic contains at least a record with the specified key and value.
+     * Asserts that the topic contains at least a record with the specified key and
+     * value.
      *
      * @param key
-     *         the key to check for
+     *            the key to check for
      * @param value
-     *         the value to check for
+     *            the value to check for
      * @return {@link TopicAssertions} for chaining assertions
      * @throws TopicAssertionError
-     *         if the topic does not contain a record with the specified key and value
+     *             if the topic does not contain a record with the specified key and
+     *             value
      */
     @SuppressWarnings("UnusedReturnValue")
     public TopicAssertions<K, V> contains(K key, V value) {
@@ -31,30 +33,32 @@ public class TopicAssertions<K, V> {
                 new TopicAssertion<>(
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key) &&
-                                                    Objects.equals(record.value(), value)),
+                                        Objects.equals(record.value(), value)),
                         (r, t) -> new TopicAssertionError(
                                 String.format(
                                         "Expected topic to contain key '%s' with value '%s', but was not found.",
-                                        key, value))
-                )
-        );
+                                        key, value))));
         return this;
     }
 
     /**
-     * Asserts that the topic contains exactly the specified number of records at the end of the duration of the timeout.
+     * Asserts that the topic contains exactly the specified number of records at
+     * the end of the duration of the timeout.
      * <p>
-     * The timeout can be set using the {@link Kassertions#within(Duration)} method. If no timeout is specified, the
+     * The timeout can be set using the {@link Kassertions#within(Duration)} method.
+     * If no timeout is specified, the
      * default timeout of {@link Kassertions#DEFAULT_TIMEOUT} (10 seconds) is used.
      * <p>
-     * This method ensures that the consumer continues polling until the timeout is reached, even if the assertion
+     * This method ensures that the consumer continues polling until the timeout is
+     * reached, even if the assertion
      * passes earlier.
      *
      * @param size
-     *         the exact number of records expected in the topic
+     *            the exact number of records expected in the topic
      * @return {@link TopicAssertions} for chaining additional assertions
      * @throws TopicAssertionError
-     *         if the number of records in the topic does not match the expected size
+     *             if the number of records in the topic does not match the expected
+     *             size
      */
     @SuppressWarnings("UnusedReturnValue")
     public TopicAssertions<K, V> hasSize(int size) {
@@ -63,32 +67,34 @@ public class TopicAssertions<K, V> {
                 new TopicAssertion<>(
                         r -> r.size() == size,
                         (r, t) -> new TopicAssertionError(
-                                String.format("Expected topic to contain %d records, but found %d.", size, r.size()))
-                )
-        );
+                                String.format("Expected topic to contain %d records, but found %d.", size, r.size()))));
         return this;
     }
 
     /**
-     * Asserts that the topic contains more than n records. Polling stops as soon as this condition is met, even before the timeout.
-     * @param size the minimum number of records expected in the topic
+     * Asserts that the topic contains more than n records. Polling stops as soon as
+     * this condition is met, even before the timeout.
+     * 
+     * @param size
+     *            the minimum number of records expected in the topic
      */
     public void hasSizeGreaterThan(int size) {
         this.assertions.add(
                 new TopicAssertion<>(
                         r -> r.size() > size,
                         (r, t) -> new TopicAssertionError(
-                                String.format("Expected topic to contain more than %d records, but only found %d after %d ms.", size, r.size(), t))
-                )
-        );
+                                String.format(
+                                        "Expected topic to contain more than %d records, but only found %d after %d ms.",
+                                        size, r.size(), t))));
     }
 
     /**
      * Asserts that the topic contains at least a record with the specified key.
      *
      * @param key
-     *         the key to check for
-     * @throws TopicAssertionError if the topic does not contain a record with the specified key
+     *            the key to check for
+     * @throws TopicAssertionError
+     *             if the topic does not contain a record with the specified key
      */
     public TopicAssertions<K, V> containsKey(V key) {
         this.assertions.add(
@@ -96,9 +102,7 @@ public class TopicAssertions<K, V> {
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.key(), key)),
                         (r, t) -> new TopicAssertionError(
-                                String.format("Expected topic to contain key '%s', but was not found.", key))
-                )
-        );
+                                String.format("Expected topic to contain key '%s', but was not found.", key))));
         return this;
     }
 
@@ -108,9 +112,7 @@ public class TopicAssertions<K, V> {
                         r -> r.stream()
                                 .anyMatch(record -> Objects.equals(record.value(), value)),
                         (r, t) -> new TopicAssertionError(
-                                String.format("Expected topic to contain value '%s', but was not found.", value))
-                )
-        );
+                                String.format("Expected topic to contain value '%s', but was not found.", value))));
     }
 
     List<TopicAssertionError> assertRecords(List<ConsumerRecord<K, V>> consumed, long timeout) {

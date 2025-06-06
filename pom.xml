@@ -8,6 +8,26 @@
 	<artifactId>kassert</artifactId>
 	<version>0.1.0-SNAPSHOT</version>
 
+	<developers>
+		<developer>
+			<name>Jonas Geiregat</name>
+			<email>jonas.grgt@gmail.com</email>
+		</developer>
+	</developers>
+
+	<licenses>
+		<license>
+			<name>Apache-2.0</name>
+			<url>https://www.apache.org/licenses/LICENSE-2.0</url>
+		</license>
+	</licenses>
+
+	<scm>
+		<url>https://github.com/jonasg-grgt/kassert</url>
+		<connection>scm:git:https://github.com/jonasg-grgt/kassert</connection>
+		<tag>HEAD</tag>
+	</scm>
+
 	<properties>
 		<maven.compiler.release>11</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -17,6 +37,11 @@
 		<assertj.version>3.26.3</assertj.version>
 		<testcontainers.version>1.20.6</testcontainers.version>
 		<junit.version>5.11.4</junit.version>
+
+		<!-- plugins -->
+		<maven-source-plugin.version>3.3.0</maven-source-plugin.version>
+		<maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
+		<spotless.version>2.41.1</spotless.version>
 	</properties>
 
 	<dependencies>
@@ -64,14 +89,138 @@
 		</dependency>
 	</dependencies>
 
+	<profiles>
+		<profile>
+			<id>release</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.jreleaser</groupId>
+						<artifactId>jreleaser-maven-plugin</artifactId>
+						<inherited>false</inherited>
+						<configuration>
+							<jreleaser>
+								<project>
+									<description>avdl-to-avsc-maven-plugin</description>
+									<links>
+										<homepage>https://github.com/jonas-grgt/kassert</homepage>
+									</links>
+									<license>APACHE-2.0</license>
+									<authors>Jonas Geiregat</authors>
+									<copyright>2025 Jonas Geiregat</copyright>
+								</project>
+								<release>
+									<github>
+										<changelog>
+											<formatted>ALWAYS</formatted>
+											<preset>conventional-commits</preset>
+										</changelog>
+									</github>
+								</release>
+								<signing>
+									<active>ALWAYS</active>
+									<armored>true</armored>
+								</signing>
+								<deploy>
+									<maven>
+										<mavenCentral>
+											<sonatype>
+												<active>ALWAYS</active>
+												<url>https://central.sonatype.com/api/v1/publisher</url>
+												<stagingRepositories>target/staging-deploy</stagingRepositories>
+											</sonatype>
+										</mavenCentral>
+									</maven>
+								</deploy>
+							</jreleaser>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+								<configuration>
+									<attach>true</attach>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<version>${maven-source-plugin.version}</version>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+								<configuration>
+									<attach>true</attach>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+
+
 	<build>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>3.2.5</version>
+				<version>${maven-surefire-plugin.version}</version>
 				<configuration>
 					<redirectTestOutputToFile>true</redirectTestOutputToFile>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.jreleaser</groupId>
+				<artifactId>jreleaser-maven-plugin</artifactId>
+				<version>1.18.0</version>
+				<inherited>false</inherited>
+			</plugin>
+			<plugin>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>${spotless.version}</version>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<formats>
+						<format>
+							<includes>
+								<include>.gitattributes</include>
+								<include>.gitignore</include>
+							</includes>
+							<trimTrailingWhitespace/>
+							<endWithNewline/>
+						</format>
+					</formats>
+					<java>
+						<toggleOffOn/>
+						<eclipse>
+							<version>4.26</version>
+							<file>formatter.xml</file>
+						</eclipse>
+						<removeUnusedImports/>
+						<importOrder>
+							<file>import-order.txt</file>
+						</importOrder>
+					</java>
 				</configuration>
 			</plugin>
 		</plugins>

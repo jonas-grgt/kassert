@@ -1,10 +1,10 @@
 package io.jonasg.kassert;
 
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 class TopicAssertion<K, V> {
 

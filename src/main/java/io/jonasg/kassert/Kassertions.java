@@ -1,15 +1,15 @@
 package io.jonasg.kassert;
 
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class Kassertions<K, V> {
 
@@ -27,7 +27,7 @@ public class Kassertions<K, V> {
         return new Kassertions<>(topic, consumer);
     }
 
-    public Kassertions(String topic, Consumer<K,V> consumer) {
+    public Kassertions(String topic, Consumer<K, V> consumer) {
         if (topic == null || topic.isBlank()) {
             throw new IllegalArgumentException("Topic must not be null or empty.");
         }
@@ -52,7 +52,7 @@ public class Kassertions<K, V> {
 
         List<ConsumerRecord<K, V>> consumed = new ArrayList<>();
 
-        var topicAssertions = new TopicAssertions<K,V>();
+        var topicAssertions = new TopicAssertions<K, V>();
         topicAssertionBuilder.build(topicAssertions);
 
         while (true) {
@@ -64,8 +64,7 @@ public class Kassertions<K, V> {
             var records = this.consumer.poll(Duration.ofMillis(pollDuration));
             consumed.addAll(
                     StreamSupport.stream(records.spliterator(), false)
-                            .collect(Collectors.toList())
-            );
+                            .collect(Collectors.toList()));
 
             logger.debug("Polled {} records", records.count());
 
@@ -81,7 +80,8 @@ public class Kassertions<K, V> {
             if (remaining <= 0) {
                 this.consumer.unsubscribe();
 
-                // Some assertions such as hasSize() require to consume until timeout has been reached.
+                // Some assertions such as hasSize() require to consume until timeout has been
+                // reached.
                 // If by then no errors have been found, we can exit without throwing an error.
                 if (errors.isEmpty() && topicAssertions.shouldConsumeUntilTimeout()) {
                     break;
@@ -89,8 +89,9 @@ public class Kassertions<K, V> {
 
                 throw new TopicAssertionError(
                         String.format("Timeout after %d ms while waiting for assertions on topic '%s'. " +
-                                      "Failed assertions: %s", this.timeout, this.topic,
-                                errors.stream().map(TopicAssertionError::getMessage).collect(Collectors.joining(", "))));
+                                "Failed assertions: %s", this.timeout, this.topic,
+                                errors.stream().map(TopicAssertionError::getMessage)
+                                        .collect(Collectors.joining(", "))));
             }
         }
     }

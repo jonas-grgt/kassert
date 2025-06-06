@@ -1,6 +1,12 @@
 package io.jonasg.kassert;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -11,13 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.IntStream;
 
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class KassertionsTest implements KafkaContainerSupport {
 
@@ -32,14 +32,12 @@ class KassertionsTest implements KafkaContainerSupport {
                 "key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
                 "value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
                 "auto.offset.reset", "earliest",
-                "group.id", "test-group"
-        ));
+                "group.id", "test-group"));
 
         producer = new KafkaProducer<>(Map.of(
                 "bootstrap.servers", container.getBootstrapServers(),
                 "key.serializer", "org.apache.kafka.common.serialization.StringSerializer",
-                "value.serializer", "org.apache.kafka.common.serialization.StringSerializer"
-        ));
+                "value.serializer", "org.apache.kafka.common.serialization.StringSerializer"));
     }
 
     @AfterAll
@@ -85,14 +83,13 @@ class KassertionsTest implements KafkaContainerSupport {
             producer.send(new ProducerRecord<>("never-contains-topic", key, "non-matching-value"))
                     .get(5, TimeUnit.SECONDS);
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume("never-contains-topic", consumer)
-                            .within(Duration.ofSeconds(5))
-                            .untilAsserted(t -> t.contains(key, "value"))
-            ).hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                                       + "'never-contains-topic'. Failed assertions: Expected topic "
-                                       + "to contain key '%s' with value 'value', "
-                                       + "but was not found.", key));
+            assertThatThrownBy(() -> Kassertions.consume("never-contains-topic", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.contains(key, "value")))
+                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
+                            + "'never-contains-topic'. Failed assertions: Expected topic "
+                            + "to contain key '%s' with value 'value', "
+                            + "but was not found.", key));
         }
     }
 
@@ -116,13 +113,12 @@ class KassertionsTest implements KafkaContainerSupport {
             producer.send(new ProducerRecord<>("never-contains-key-topic", key, "non-matching-value"))
                     .get(5, TimeUnit.SECONDS);
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume("never-contains-topic", consumer)
-                            .within(Duration.ofSeconds(5))
-                            .untilAsserted(t -> t.containsKey(key))
-            ).hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                                       + "'never-contains-topic'. Failed assertions: Expected topic to contain "
-                                       + "key '%s', but was not found.", key));
+            assertThatThrownBy(() -> Kassertions.consume("never-contains-topic", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsKey(key)))
+                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
+                            + "'never-contains-topic'. Failed assertions: Expected topic to contain "
+                            + "key '%s', but was not found.", key));
         }
     }
 
@@ -146,13 +142,12 @@ class KassertionsTest implements KafkaContainerSupport {
             producer.send(new ProducerRecord<>("never-contains-value-topic", value, "non-matching-value"))
                     .get(5, TimeUnit.SECONDS);
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume("never-contains-topic", consumer)
-                            .within(Duration.ofSeconds(5))
-                            .untilAsserted(t -> t.containsValue(value))
-            ).hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                                       + "'never-contains-topic'. Failed assertions: Expected topic to contain "
-                                       + "value '%s', but was not found.", value));
+            assertThatThrownBy(() -> Kassertions.consume("never-contains-topic", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> t.containsValue(value)))
+                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
+                            + "'never-contains-topic'. Failed assertions: Expected topic to contain "
+                            + "value '%s', but was not found.", value));
         }
     }
 
@@ -186,24 +181,22 @@ class KassertionsTest implements KafkaContainerSupport {
             var key = UUID.randomUUID().toString();
             var topic = "does-not-has-size-topic-" + key;
             IntStream.range(0, 10)
-                    .forEach(i ->
-                            new Thread(() -> {
-                                try {
-                                    Thread.sleep(i * 200L);
-                                    producer.send(new ProducerRecord<>(topic, key, "value"))
-                                            .get(5, TimeUnit.SECONDS);
-                                } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }).start());
+                    .forEach(i -> new Thread(() -> {
+                        try {
+                            Thread.sleep(i * 200L);
+                            producer.send(new ProducerRecord<>(topic, key, "value"))
+                                    .get(5, TimeUnit.SECONDS);
+                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }).start());
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume(topic, consumer)
-                            .within(Duration.ofSeconds(10))
-                            .untilAsserted(t -> t.hasSize(20))
-            ).hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                                       + "'%s'. Failed assertions: Expected topic "
-                                       + "to contain 20 records, but found 10.", topic));
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSize(20)))
+                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                            + "'%s'. Failed assertions: Expected topic "
+                            + "to contain 20 records, but found 10.", topic));
         }
 
         @Test
@@ -211,24 +204,22 @@ class KassertionsTest implements KafkaContainerSupport {
             var key = UUID.randomUUID().toString();
             var topic = "does-not-has-size-topic-" + key;
             IntStream.range(0, 10)
-                    .forEach(i ->
-                            new Thread(() -> {
-                                try {
-                                    Thread.sleep(i * 200L);
-                                    producer.send(new ProducerRecord<>(topic, key, "value"))
-                                            .get(5, TimeUnit.SECONDS);
-                                } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }).start());
+                    .forEach(i -> new Thread(() -> {
+                        try {
+                            Thread.sleep(i * 200L);
+                            producer.send(new ProducerRecord<>(topic, key, "value"))
+                                    .get(5, TimeUnit.SECONDS);
+                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }).start());
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume(topic, consumer)
-                            .within(Duration.ofSeconds(10))
-                            .untilAsserted(t -> t.hasSize(5))
-            ).hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                                       + "'%s'. Failed assertions: Expected topic "
-                                       + "to contain 5 records, but found 10.", topic));
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSize(5)))
+                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                            + "'%s'. Failed assertions: Expected topic "
+                            + "to contain 5 records, but found 10.", topic));
         }
     }
 
@@ -262,24 +253,22 @@ class KassertionsTest implements KafkaContainerSupport {
             var key = UUID.randomUUID().toString();
             var topic = "does-not-has-min-size-topic-" + key;
             IntStream.range(0, 10)
-                    .forEach(i ->
-                            new Thread(() -> {
-                                try {
-                                    Thread.sleep(i * 200L);
-                                    producer.send(new ProducerRecord<>(topic, key, "value"))
-                                            .get(5, TimeUnit.SECONDS);
-                                } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }).start());
+                    .forEach(i -> new Thread(() -> {
+                        try {
+                            Thread.sleep(i * 200L);
+                            producer.send(new ProducerRecord<>(topic, key, "value"))
+                                    .get(5, TimeUnit.SECONDS);
+                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }).start());
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume(topic, consumer)
-                            .within(Duration.ofSeconds(10))
-                            .untilAsserted(t -> t.hasSizeGreaterThan(20))
-            ).hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                                       + "'%s'. Failed assertions: Expected topic to contain "
-                                       + "more than 20 records, but only found 10 after 10000 ms.", topic));
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSizeGreaterThan(20)))
+                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                            + "'%s'. Failed assertions: Expected topic to contain "
+                            + "more than 20 records, but only found 10 after 10000 ms.", topic));
         }
 
         @Test
@@ -287,24 +276,22 @@ class KassertionsTest implements KafkaContainerSupport {
             var key = UUID.randomUUID().toString();
             var topic = "equal-numer-as-param-topic-" + key;
             IntStream.range(0, 10)
-                    .forEach(i ->
-                            new Thread(() -> {
-                                try {
-                                    Thread.sleep(i * 200L);
-                                    producer.send(new ProducerRecord<>(topic, key, "value"))
-                                            .get(5, TimeUnit.SECONDS);
-                                } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }).start());
+                    .forEach(i -> new Thread(() -> {
+                        try {
+                            Thread.sleep(i * 200L);
+                            producer.send(new ProducerRecord<>(topic, key, "value"))
+                                    .get(5, TimeUnit.SECONDS);
+                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }).start());
 
-            assertThatThrownBy(() ->
-                    Kassertions.consume(topic, consumer)
-                            .within(Duration.ofSeconds(10))
-                            .untilAsserted(t -> t.hasSizeGreaterThan(10))
-            ).hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                                       + "'%s'. Failed assertions: Expected topic to contain "
-                                       + "more than 10 records, but only found 10 after 10000 ms.", topic));
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSizeGreaterThan(10)))
+                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                            + "'%s'. Failed assertions: Expected topic to contain "
+                            + "more than 10 records, but only found 10 after 10000 ms.", topic));
         }
     }
 }
