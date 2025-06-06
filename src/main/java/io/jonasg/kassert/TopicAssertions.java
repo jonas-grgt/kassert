@@ -115,6 +115,22 @@ public class TopicAssertions<K, V> {
                                 String.format("Expected topic to contain value '%s', but was not found.", value))));
     }
 
+    /**
+     * Asserts that the topic is empty at the end of the duration of the timeout.
+     * 
+     * @throws TopicAssertionError
+     *             if the topic is not empty
+     */
+    public TopicAssertions<K, V> isEmpty() {
+        this.consumeUntilTimeout = true;
+        this.assertions.add(
+                new TopicAssertion<>(
+                        List::isEmpty,
+                        (r, t) -> new TopicAssertionError(
+                                String.format("Expected topic to be empty, but found %d records.", r.size()))));
+        return this;
+    }
+
     List<TopicAssertionError> assertRecords(List<ConsumerRecord<K, V>> consumed, long timeout) {
         return assertions.stream()
                 .map(ka -> {
@@ -128,7 +144,7 @@ public class TopicAssertions<K, V> {
                 .collect(Collectors.toList());
     }
 
-    public boolean shouldConsumeUntilTimeout() {
+    boolean shouldConsumeUntilTimeout() {
         return consumeUntilTimeout;
     }
 }

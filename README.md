@@ -23,7 +23,7 @@ Kassertions.consume("topic", consumer)
 | `hasSize(int n)`                                            | Asserts that the topic contains exactly the specified number of records at the end of the duration of the timeout.            |
 | `hasSizeGreaterThan(int n)`                                 | Asserts that the topic contains more than n records. Polling stops as soon as this condition is met, even before the timeout. |
 | `hasSizeLessThan(int n)`                                    | TODO                                                                                                                          |
-| `isEmpty()`                                                 | TODO                                                                                                                          |
+| `isEmpty()`                                                 | Asserts that the topic is empty at the end of the duration of the timeout.                                                    |
 | `satisfies(Consumer<List<ConsumerRecord<K, V>>> assertion)` | TODO                                                                                                                          |
 | `allSatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | TODO                                                                                                                          |
 | `anySatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | TODO                                                                                                                          |

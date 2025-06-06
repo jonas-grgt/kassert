@@ -152,6 +152,44 @@ class KassertionsTest implements KafkaContainerSupport {
     }
 
     @Nested
+    class IsEmpty {
+
+        @Test
+        void assertsTopicIsEmpty() {
+            Kassertions.consume("empty-topic", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(TopicAssertions::isEmpty);
+        }
+
+        @Test
+        void failWhenTopicIsNotEmpty() {
+            var topic = "non-empty-topic-" + UUID.randomUUID();
+            IntStream.range(0, 5)
+                    .forEach(i -> {
+                        // Simulate some delay to ensure records are sent after the consumer starts
+                        // polling
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(2000);
+                                producer.send(new ProducerRecord<>(topic, "key", "value"))
+                                        .get(5, TimeUnit.SECONDS);
+                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                                throw new RuntimeException(e);
+                            }
+
+                        }).start();
+                    });
+
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(TopicAssertions::isEmpty))
+                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
+                            + "'%s'. Failed assertions: "
+                            + "Expected topic to be empty, but found 5 records.", topic));
+        }
+    }
+
+    @Nested
     class HasSize {
 
         @Test
