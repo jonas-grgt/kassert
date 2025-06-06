@@ -1,15 +1,24 @@
 # Usage
-
+## Example usage 
+Consume until a condition is met or fail after a timeout (5 seconds in this example):
 ```java
 Kassertions.consume("topic", consumer)
     .within(Duration.ofSeconds(5))
-        .untilAsserted(t -> t
-            .hasSize(10)
-            .contains(expectedKey, expectedValue));
+        .untilAsserted(t -> t.containsKey(key));
+```
+## Size based assertions
+The following will **continuously poll the topic for 5 seconds** unless the size is greater than 10, in which case it will fail immediately.
+If by the end of the timeout the size is still not greater than 10, it will also fail otherwise if by then, exactly 10 records are present, it will pass.
+
+```java
+Kassertions.consume("topic", consumer)
+    .within(Duration.ofSeconds(5)).hasSize(10);
 ```
 
-# Available Assertions
+This also applies to `hasSizeGreaterThan(int n)`, `hasSizeLessThan(int n)` and `isEmpty()`.
 
+# Available Assertions
+```java
 | Method                                                      | description                                                                                                                   |
 |-------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | `contains(K key, V value)`                                  | Asserts at least one record matches both key and value.                                                                       |
