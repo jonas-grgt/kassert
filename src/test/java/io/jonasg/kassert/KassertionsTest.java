@@ -2,6 +2,7 @@ package io.jonasg.kassert;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
@@ -49,6 +50,19 @@ class KassertionsTest implements KafkaContainerSupport {
         if (producer != null) {
             producer.close();
         }
+    }
+
+    @Test
+    void rethrowCheckedExceptionAsRuntimeException() {
+        assertThatThrownBy(() -> {
+            Kassertions.consume("check-exception-topic", consumer)
+                    .within(Duration.ofSeconds(5))
+                    .untilAsserted(t -> {
+                        throw new IOException("Test exception");
+                    });
+        }).isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("Test exception")
+                .hasCauseInstanceOf(IOException.class);
     }
 
     @Nested
