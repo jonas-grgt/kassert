@@ -76,6 +76,11 @@ public class Kassertions<K, V> {
                 break;
             }
 
+            if (!errors.isEmpty() && topicAssertions.stopConsumptionOnError()) {
+                logger.debug("Found {} errors for topic: {}", errors.size(), this.topic);
+                throw topicAssertionError(errors);
+            }
+
             remaining -= System.currentTimeMillis() - startPoll;
             if (remaining <= 0) {
                 this.consumer.unsubscribe();
@@ -87,13 +92,17 @@ public class Kassertions<K, V> {
                     break;
                 }
 
-                throw new TopicAssertionError(
-                        String.format("Timeout after %d ms while waiting for assertions on topic '%s'. " +
-                                "Failed assertions: %s", this.timeout, this.topic,
-                                errors.stream().map(TopicAssertionError::getMessage)
-                                        .collect(Collectors.joining(", "))));
+                throw topicAssertionError(errors);
             }
         }
+    }
+
+    private TopicAssertionError topicAssertionError(List<TopicAssertionError> errors) {
+        return new TopicAssertionError(
+                String.format("Timeout after %d ms while waiting for assertions on topic '%s'. " +
+                        "Failed assertions: %s", this.timeout, this.topic,
+                        errors.stream().map(TopicAssertionError::getMessage)
+                                .collect(Collectors.joining(", "))));
     }
 
 }

@@ -33,7 +33,7 @@ This also applies to `hasSizeGreaterThan(int n)`, `hasSizeLessThan(int n)` and `
 | `hasValueSatisfying(Predicate<V> predicate)`                | TODO                                                                                                                          |
 | `hasSize(int n)`                                            | Asserts that the topic contains exactly the specified number of records at the end of the duration of the timeout.            |
 | `hasSizeGreaterThan(int n)`                                 | Asserts that the topic contains more than n records. Polling stops as soon as this condition is met, even before the timeout. |
-| `hasSizeLessThan(int n)`                                    | TODO                                                                                                                          |
+| `hasSizeLessThan(int n)`                                    | Asserts that the topic contains less than n records. Polling stops as soon as this condition fails, even before the timeout.  |
 | `isEmpty()`                                                 | Asserts that the topic is empty at the end of the duration of the timeout.                                                    |
 | `satisfies(Consumer<List<ConsumerRecord<K, V>>> assertion)` | TODO                                                                                                                          |
 | `allSatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | TODO                                                                                                                          |

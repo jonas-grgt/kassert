@@ -15,6 +15,8 @@ public class TopicAssertions<K, V> {
 
     private boolean consumeUntilTimeout;
 
+    private boolean stopConsumptionOnError;
+
     /**
      * Asserts that the topic contains at least a record with the specified key and
      * value.
@@ -86,6 +88,25 @@ public class TopicAssertions<K, V> {
                         (r, t) -> new TopicAssertionError(
                                 String.format(
                                         "Expected topic to contain more than %d records, but only found %d after %d ms.",
+                                        size, r.size(), t))));
+    }
+
+    /**
+     * Asserts that the topic contains less than n records. Polling stops as soon as
+     * this condition is not met, even before the timeout.
+     * 
+     * @param size
+     *            the maximum number of records expected in the topic
+     */
+    public void hasSizeLessThan(int size) {
+        this.consumeUntilTimeout = true;
+        this.stopConsumptionOnError = true;
+        this.assertions.add(
+                new TopicAssertion<>(
+                        r -> r.size() < size,
+                        (r, t) -> new TopicAssertionError(
+                                String.format(
+                                        "Expected topic to contain less than %d records, but found %d after %d ms.",
                                         size, r.size(), t))));
     }
 
@@ -220,5 +241,9 @@ public class TopicAssertions<K, V> {
 
     boolean shouldConsumeUntilTimeout() {
         return consumeUntilTimeout;
+    }
+
+    public boolean stopConsumptionOnError() {
+        return stopConsumptionOnError;
     }
 }

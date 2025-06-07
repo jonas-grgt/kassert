@@ -408,4 +408,53 @@ class KassertionsTest implements KafkaContainerSupport {
                             + "more than 10 records, but only found 10 after 10000 ms.", topic));
         }
     }
+
+    @Nested
+    class HasSizeLessThan {
+
+        @Test
+        void assertsTopicHasSizeLessThan() {
+            var key = UUID.randomUUID().toString();
+            var topic = "has-size-greater-then-topic-" + key;
+            IntStream.range(0, 10)
+                    .forEach(i -> {
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(i * 200L);
+                                producer.send(new ProducerRecord<>(topic, key, "value"))
+                                        .get(5, TimeUnit.SECONDS);
+                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }).start();
+                    });
+
+            Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSizeLessThan(11));
+        }
+
+        @Test
+        void failWhenTopicHasLessThanMinExpectedSize() {
+            var key = UUID.randomUUID().toString();
+            var topic = "does-not-has-mas-size-topic-" + key;
+            IntStream.range(0, 10)
+                    .forEach(i -> new Thread(() -> {
+                        try {
+                            Thread.sleep(i * 200L);
+                            producer.send(new ProducerRecord<>(topic, key, "value"))
+                                    .get(5, TimeUnit.SECONDS);
+                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }).start());
+
+            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
+                    .within(Duration.ofSeconds(10))
+                    .untilAsserted(t -> t.hasSizeLessThan(9)))
+                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
+                            + "'%s'. Failed assertions: Expected topic to contain less than "
+                            + "9 records, but found 9 after 10000 ms.", topic));
+        }
+    }
 }
