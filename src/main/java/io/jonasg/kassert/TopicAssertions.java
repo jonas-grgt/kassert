@@ -146,6 +146,14 @@ public class TopicAssertions<K, V> {
         return this;
     }
 
+    public TopicAssertions<K, V> containsExactlyKeys(List<V> expected) {
+        throw new TopicAssertionError("Assertion not implemented yet");
+    }
+
+    public TopicAssertions<K, V> containsExactlyValues(List<V> expected) {
+        throw new TopicAssertionError("Assertion not implemented yet");
+    }
+
     /**
      * Asserts that the topic contains a list of records with the specified keys in
      * any order
