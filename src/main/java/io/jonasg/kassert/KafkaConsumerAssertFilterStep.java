@@ -5,9 +5,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-/// Narrows the records an assertion applies to and selects how the assertion terminates.
-/// The terminal assertions run within the deadline set by [within], or the default of
-/// 5 seconds when it was omitted.
+/// Narrows the records an assertion is applied to.
 public interface KafkaConsumerAssertFilterStep<K, V> {
 
     /// Restricts the assertion to records matching the given predicate.
