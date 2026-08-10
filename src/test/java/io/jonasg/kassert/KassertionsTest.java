@@ -1,460 +1,544 @@
 package io.jonasg.kassert;
 
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
+import org.testcontainers.utility.DockerImageName;
 
-import java.io.IOException;
-import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
+import static org.apache.kafka.clients.CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
+import static org.apache.kafka.clients.CommonClientConfigs.GROUP_ID_CONFIG;
+import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.producer.ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class KassertionsTest implements KafkaContainerSupport {
+@Testcontainers
+class KassertionsTest {
 
-    static KafkaConsumer<String, String> consumer;
+    static final AtomicInteger TOPIC_SEQ = new AtomicInteger();
 
-    static KafkaProducer<String, String> producer;
+    @Container
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka-native:3.8.0"));
 
-    @BeforeAll
-    static void setup() {
-        consumer = new KafkaConsumer<>(Map.of(
-                "bootstrap.servers", container.getBootstrapServers(),
-                "key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
-                "value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer",
-                "auto.offset.reset", "earliest",
-                "group.id", "test-group"));
+    List<KafkaConsumer<String, String>> consumers = new ArrayList<>();
 
-        producer = new KafkaProducer<>(Map.of(
-                "bootstrap.servers", container.getBootstrapServers(),
-                "key.serializer", "org.apache.kafka.common.serialization.StringSerializer",
-                "value.serializer", "org.apache.kafka.common.serialization.StringSerializer"));
+    Admin brokerAdmin;
+
+    KafkaProducer<Object, Object> producer;
+
+    @BeforeEach
+    void setup() {
+        if (this.producer == null) {
+            this.producer = new KafkaProducer<>(Map.of(
+                    BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers(),
+                    KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class,
+                    VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class));
+        }
+        if (this.brokerAdmin == null) {
+            this.brokerAdmin = AdminClient
+                    .create(Map.of(BOOTSTRAP_SERVERS_CONFIG, KassertionsTest.kafka.getBootstrapServers()));
+        }
     }
 
-    @AfterAll
-    static void tearDown() {
-        if (consumer != null) {
-            consumer.close();
+    @AfterEach
+    void closeConsumers() {
+        consumers.forEach(KafkaConsumer::close);
+        consumers.clear();
+    }
+
+    @Nested
+    class AnySatisfy {
+
+        @Test
+        void passesWhenRecordAlreadyPresent() {
+            String topic = newTopic();
+            produce(topic, "k", "v1");
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
         }
-        if (producer != null) {
-            producer.close();
+
+        @Test
+        void passesWhenRecordArrivesAfterStart() {
+            String topic = newTopic();
+            produceAsync(topic, "k", "v1", 2000);
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(5, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+        }
+
+        @Test
+        void passesWhenOnlyOneOfManySatisfies() {
+            String topic = newTopic();
+            IntStream.range(0, 10)
+                    .forEach(i -> produce(topic, "k%d".formatted(i), "v%d".formatted(i)));
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> {
+                        assertThat(rec.key()).isEqualTo("k5");
+                        assertThat(rec.value()).isEqualTo("v5");
+                    });
+        }
+
+        @Test
+        void timesOutWhenNoRecordArrives() {
+            String topic = newTopic();
+
+            assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(2, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1")))
+                    .isInstanceOf(AssertionError.class)
+                    .hasMessageContaining("none did")
+                    .hasMessageContaining("Matching records observed");
+        }
+
+        @Test
+        void timesOutWhenNoRecordMatchesFilter() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+
+            assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(2, TimeUnit.SECONDS)
+                    .filter(rec -> rec.key().equals("k2"))
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1")))
+                    .isInstanceOf(AssertionError.class)
+                    .hasMessageContaining("none did");
+        }
+    }
+
+    @Nested
+    class AllSatisfy {
+
+        @Test
+        void passesWhenAllRecordsSatisfy() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+            produce(topic, "k2", "v1");
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(3, TimeUnit.SECONDS)
+                    .allSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+        }
+
+        @Test
+        void passesWhenRecordArrivesAfterStart() {
+            String topic = newTopic();
+            produceAsync(topic, "k", "v1", 500);
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(3, TimeUnit.SECONDS)
+                    .allSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+        }
+
+        @Test
+        void timesOutWhenOneRecordViolates() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+            produce(topic, "k2", "v2");
+
+            assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(2, TimeUnit.SECONDS)
+                    .allSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1")))
+                    .isInstanceOf(AssertionError.class)
+                    .hasMessageContaining("Expected every matching record")
+                    .hasMessageContaining("Matching records observed");
+        }
+
+        @Test
+        void failsWhenNoRecordMatchesFilter() {
+            String topic = newTopic();
+            produce(topic, "k", "v-other");
+
+            assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(2, TimeUnit.SECONDS)
+                    .filter(rec -> rec.value().equals("v1"))
+                    .allSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1")))
+                    .isInstanceOf(AssertionError.class)
+                    .hasMessageContaining("no records matched the filter");
+        }
+
+        @Test
+        void keepsPollingAfterFirstViolation() {
+            String topic = newTopic();
+            produceAsync(topic, "k1", "v-bad", 300);
+            produceAsync(topic, "k2", "v-good", 900);
+
+            assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .within(3, TimeUnit.SECONDS)
+                    .allSatisfy(rec -> assertThat(rec.value()).isEqualTo("v-good")))
+                    .isInstanceOf(AssertionError.class)
+                    .hasMessageContaining("did not");
         }
     }
 
     @Test
-    void rethrowCheckedExceptionAsRuntimeException() {
-        assertThatThrownBy(() -> {
-            Kassertions.consume("check-exception-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> {
-                        throw new IOException("Test exception");
-                    });
-        }).isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("Test exception")
-                .hasCauseInstanceOf(IOException.class);
+    void noneSatisfyPassesWhenNoRecordsArrive() {
+        String topic = newTopic();
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(2, TimeUnit.SECONDS)
+                .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+    }
+
+    @Test
+    void noneSatisfyPassesWhenRecordsArriveButNoneSatisfy() {
+        String topic = newTopic();
+        produce(topic, "k", "v1");
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(2, TimeUnit.SECONDS)
+                .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v2"));
+    }
+
+    @Test
+    void noneSatisfyFailsFastWhenRecordAlreadySatisfies() {
+        String topic = newTopic();
+        produce(topic, "k", "v-bad");
+
+        assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v-bad")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("Expected no matching record");
+    }
+
+    @Test
+    void noneSatisfyFailsWhenViolatingRecordArrivesLater() {
+        String topic = newTopic();
+        produceAsync(topic, "k", "v-bad", 500);
+
+        assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v-bad")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("Expected no matching record");
+    }
+
+    @Test
+    void noneSatisfyPassesWithFilter() {
+        String topic = newTopic();
+        produce(topic, "k1", "v1");
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(2, TimeUnit.SECONDS)
+                .filter(rec -> rec.key().equals("k2"))
+                .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+    }
+
+    @Test
+    void filterRestrictsToMatchingRecords() {
+        String topic = newTopic();
+        produce(topic, "k1", "v1");
+        produce(topic, "k2", "v2");
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .filter(rec -> rec.key().equals("k1"))
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .filter(rec -> rec.key().equals("k2"))
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v2"));
+    }
+
+    @Test
+    void filterChainingCombinesWithAnd() {
+        String topic = newTopic();
+        produce(topic, "k", "v-good");
+        produce(topic, "k", "v-bad");
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .filter(rec -> rec.key().equals("k"))
+                .filter(rec -> rec.value().equals("v-good"))
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v-good"));
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .filter(rec -> rec.key().equals("k"))
+                .filter(rec -> rec.value().equals("v-bad"))
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v-bad"));
+    }
+
+    @Test
+    void filterAppliedBeforeAsyncArrival() {
+        String topic = newTopic();
+        produceAsync(topic, "k", "v1", 400);
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .within(3, TimeUnit.SECONDS)
+                .filter(rec -> rec.key().equals("k"))
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+    }
+
+    @Test
+    void omitsFromBeginningAndWithin_readsNewlyArrivingRecords() {
+        String topic = newTopic();
+        produceAsync(topic, "k", "v1", 400);
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+    }
+
+    @Test
+    void usesFromBeginningWithoutWithin() {
+        String topic = newTopic();
+        produce(topic, "k", "v1");
+
+        Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .fromBeginning()
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+    }
+
+    @Test
+    void defaultTimeoutAppliesWhenWithinOmitted() {
+        String topic = newTopic();
+
+        assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                .assignedTo(topic, 0)
+                .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("none did");
     }
 
     @Nested
-    class Contains {
+    class FromLast {
 
         @Test
-        void assertsTopicContains() throws ExecutionException, InterruptedException, TimeoutException {
-            var key = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("contains-topic", key, "value"))
-                    .get(5, TimeUnit.SECONDS);
+        void singlePartition_readsOnlyLastNRecords() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+            produce(topic, "k2", "v2");
+            produce(topic, "k3", "v3");
 
-            Kassertions.consume("contains-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.contains(key, "value"));
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromLast(2)
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v3"));
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromLast(2)
+                    .within(3, TimeUnit.SECONDS)
+                    .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
         }
 
         @Test
-        void failWhenTopicDoesNotContain() throws ExecutionException, InterruptedException, TimeoutException {
-            var key = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("never-contains-topic", key, "non-matching-value"))
-                    .get(5, TimeUnit.SECONDS);
+        void clampsToLogStartWhenTopicHasFewerRecordsThanN() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+            produce(topic, "k2", "v2");
 
-            assertThatThrownBy(() -> Kassertions.consume("never-contains-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.contains(key, "value")))
-                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                            + "'never-contains-topic'. Failed assertions: Expected topic "
-                            + "to contain key '%s' with value 'value', "
-                            + "but was not found.", key));
-        }
-    }
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromLast(5)
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
 
-    @Nested
-    class ContainsKey {
-
-        @Test
-        void assertsTopicContainsKey() throws ExecutionException, InterruptedException, TimeoutException {
-            var key = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("contains-key-topic", key, "value"))
-                    .get(5, TimeUnit.SECONDS);
-
-            Kassertions.consume("contains-key-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsKey(key));
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromLast(5)
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v2"));
         }
 
         @Test
-        void failWhenTopicDoesNotContainKey() throws ExecutionException, InterruptedException, TimeoutException {
-            var key = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("never-contains-key-topic", key, "non-matching-value"))
-                    .get(5, TimeUnit.SECONDS);
+        void rejectsNBelowOne() {
+            String topic = newTopic();
 
-            assertThatThrownBy(() -> Kassertions.consume("never-contains-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsKey(key)))
-                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                            + "'never-contains-topic'. Failed assertions: Expected topic to contain "
-                            + "key '%s', but was not found.", key));
-        }
-    }
-
-    @Nested
-    class ContainsValue {
-
-        @Test
-        void assertsTopicContainsValue() throws ExecutionException, InterruptedException, TimeoutException {
-            var value = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("contains-value-topic", "key", value))
-                    .get(5, TimeUnit.SECONDS);
-
-            Kassertions.consume("contains-value-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsValue(value));
+            assertThatThrownBy(() -> Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromLast(0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("n must be >= 1");
         }
 
         @Test
-        void failWhenTopicDoesNotContainValue() throws ExecutionException, InterruptedException, TimeoutException {
-            var value = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("never-contains-value-topic", value, "non-matching-value"))
-                    .get(5, TimeUnit.SECONDS);
+        void allPartitions_windBackPerPartition() {
+            String topic = newTopic(2);
+            produce(topic, 0, "k1", "v1");
+            produce(topic, 0, "k2", "v2");
+            produce(topic, 1, "k3", "v3");
 
-            assertThatThrownBy(() -> Kassertions.consume("never-contains-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsValue(value)))
-                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                            + "'never-contains-topic'. Failed assertions: Expected topic to contain "
-                            + "value '%s', but was not found.", value));
-        }
-    }
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic)
+                    .fromLast(1)
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v2"));
 
-    @Nested
-    class ContainsInAnyOrder {
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic)
+                    .fromLast(1)
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v3"));
 
-        @Test
-        void assertsTopicContainsKeysInAnyOrder() throws ExecutionException, InterruptedException, TimeoutException {
-            var key1 = UUID.randomUUID().toString();
-            var key2 = UUID.randomUUID().toString();
-            var key3 = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("contains-keys-in-any-order", key1, "value"))
-                    .get(5, TimeUnit.SECONDS);
-            producer.send(new ProducerRecord<>("contains-keys-in-any-order", key2, "value"))
-                    .get(5, TimeUnit.SECONDS);
-            producer.send(new ProducerRecord<>("contains-keys-in-any-order", key3, "value"))
-                    .get(5, TimeUnit.SECONDS);
-
-            Kassertions.consume("contains-keys-in-any-order", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsKeysInAnyOrder(List.of(key1, key3, key2)));
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic)
+                    .fromLast(1)
+                    .within(3, TimeUnit.SECONDS)
+                    .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
         }
 
         @Test
-        void failWhenTopicDoesNotContainKeysInAnyOrder()
-                throws ExecutionException, InterruptedException, TimeoutException {
-            var key1 = UUID.randomUUID().toString();
-            var key2 = UUID.randomUUID().toString();
-            var topic = "contains-values-in-any-order-" + key1;
-            producer.send(new ProducerRecord<>(topic, key1, "value"))
-                    .get(5, TimeUnit.SECONDS);
+        void fromBeginningThenFromLast_lastCallWins() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+            produce(topic, "k2", "v2");
+            produce(topic, "k3", "v3");
 
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsKeysInAnyOrder(List.of(key1, key2))))
-                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic " +
-                            "'%1$s'. Failed assertions: Expected topic to " +
-                            "contain keys [%2$s, %3$s] in any order, but [%3$s] could not be found in received keys [%2$s]",
-                            topic, key1, key2));
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .fromLast(1)
+                    .within(3, TimeUnit.SECONDS)
+                    .noneSatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
+
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromBeginning()
+                    .fromLast(1)
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v3"));
         }
 
         @Test
-        void assertsTopicContainsValuesInAnyOrder() throws ExecutionException, InterruptedException, TimeoutException {
-            var value1 = UUID.randomUUID().toString();
-            var value2 = UUID.randomUUID().toString();
-            var value3 = UUID.randomUUID().toString();
-            producer.send(new ProducerRecord<>("contains-values-in-any-order", "key", value1))
-                    .get(5, TimeUnit.SECONDS);
-            producer.send(new ProducerRecord<>("contains-values-in-any-order", "key", value2))
-                    .get(5, TimeUnit.SECONDS);
-            producer.send(new ProducerRecord<>("contains-values-in-any-order", "key", value3))
-                    .get(5, TimeUnit.SECONDS);
+        void fromLastThenFromBeginning_lastCallWins() {
+            String topic = newTopic();
+            produce(topic, "k1", "v1");
+            produce(topic, "k2", "v2");
+            produce(topic, "k3", "v3");
 
-            Kassertions.consume("contains-values-in-any-order", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsValuesInAnyOrder(List.of(value1, value3, value2)));
-        }
-
-        @Test
-        void failWhenTopicDoesNotContainValuesInAnyOrder()
-                throws ExecutionException, InterruptedException, TimeoutException {
-            var value1 = UUID.randomUUID().toString();
-            var value2 = UUID.randomUUID().toString();
-            var topic = "contains-values-in-any-order-" + value1;
-            producer.send(new ProducerRecord<>(topic, "key", value1))
-                    .get(5, TimeUnit.SECONDS);
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(t -> t.containsValuesInAnyOrder(List.of(value1, value2))))
-                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic " +
-                            "'%1$s'. Failed assertions: Expected topic to " +
-                            "contain values [%2$s, %3$s] in any order, but [%3$s] could not be found in received values [%2$s]",
-                            topic, value1, value2));
+            Kassertions.consume(newConsumer())
+                    .assignedTo(topic, 0)
+                    .fromLast(1)
+                    .fromBeginning()
+                    .within(3, TimeUnit.SECONDS)
+                    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
         }
     }
 
-    @Nested
-    class IsEmpty {
-
-        @Test
-        void assertsTopicIsEmpty() {
-            Kassertions.consume("empty-topic", consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(TopicAssertions::isEmpty);
+    private String newTopic(int partitions) {
+        String name = "topic-" + TOPIC_SEQ.incrementAndGet();
+        try {
+            this.brokerAdmin.createTopics(List.of(new NewTopic(name, partitions, (short) 1))).all()
+                    .get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            throw new RuntimeException(e);
         }
-
-        @Test
-        void failWhenTopicIsNotEmpty() {
-            var topic = "non-empty-topic-" + UUID.randomUUID();
-            IntStream.range(0, 5)
-                    .forEach(i -> {
-                        // Simulate some delay to ensure records are sent after the consumer starts
-                        // polling
-                        new Thread(() -> {
-                            try {
-                                Thread.sleep(2000);
-                                producer.send(new ProducerRecord<>(topic, "key", "value"))
-                                        .get(5, TimeUnit.SECONDS);
-                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                throw new RuntimeException(e);
-                            }
-
-                        }).start();
-                    });
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(5))
-                    .untilAsserted(TopicAssertions::isEmpty))
-                    .hasMessage(String.format("Timeout after 5000 ms while waiting for assertions on topic "
-                            + "'%s'. Failed assertions: "
-                            + "Expected topic to be empty, but found 5 records.", topic));
-        }
-
+        return name;
     }
 
-    @Nested
-    class HasSize {
+    private String newTopic() {
+        return this.newTopic(1);
+    }
 
-        @Test
-        void assertsTopicHasExactSize() {
-            var key = UUID.randomUUID().toString();
-            var topic = "has-size-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> {
-                        new Thread(() -> {
-                            try {
-                                Thread.sleep(i * 200L);
-                                producer.send(new ProducerRecord<>(topic, key, "value"))
-                                        .get(5, TimeUnit.SECONDS);
-                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }).start();
-                    });
+    private KafkaConsumer<String, String> newConsumer() {
+        Properties props = new Properties();
+        props.put(BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+        props.put(GROUP_ID_CONFIG, "kassert-" + System.nanoTime());
+        props.put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        consumers.add(consumer);
+        return consumer;
+    }
 
-            Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSize(10));
-        }
-
-        @Test
-        void failWhenTopicHasLessThanExpectedSize() {
-            var key = UUID.randomUUID().toString();
-            var topic = "does-not-has-size-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> new Thread(() -> {
-                        try {
-                            Thread.sleep(i * 200L);
-                            producer.send(new ProducerRecord<>(topic, key, "value"))
-                                    .get(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).start());
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSize(20)))
-                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                            + "'%s'. Failed assertions: Expected topic "
-                            + "to contain 20 records, but found 10.", topic));
-        }
-
-        @Test
-        void failWhenTopicHasMoreThanExpectedSize() {
-            var key = UUID.randomUUID().toString();
-            var topic = "does-not-has-size-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> new Thread(() -> {
-                        try {
-                            Thread.sleep(i * 200L);
-                            producer.send(new ProducerRecord<>(topic, key, "value"))
-                                    .get(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).start());
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSize(5)))
-                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                            + "'%s'. Failed assertions: Expected topic "
-                            + "to contain 5 records, but found 10.", topic));
+    private void produce(String topic, String key, String value) {
+        try {
+            this.producer.send(new ProducerRecord<>(topic, key, value)).get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            throw new RuntimeException(e);
         }
     }
 
-    @Nested
-    class HasSizeGreaterThan {
-
-        @Test
-        void assertsTopicHasSizeGreaterThan() {
-            var key = UUID.randomUUID().toString();
-            var topic = "has-size-greater-then-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> {
-                        new Thread(() -> {
-                            try {
-                                Thread.sleep(i * 200L);
-                                producer.send(new ProducerRecord<>(topic, key, "value"))
-                                        .get(5, TimeUnit.SECONDS);
-                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }).start();
-                    });
-
-            Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSizeGreaterThan(9));
-        }
-
-        @Test
-        void failWhenTopicHasLessThanMinExpectedSize() {
-            var key = UUID.randomUUID().toString();
-            var topic = "does-not-has-min-size-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> new Thread(() -> {
-                        try {
-                            Thread.sleep(i * 200L);
-                            producer.send(new ProducerRecord<>(topic, key, "value"))
-                                    .get(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).start());
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSizeGreaterThan(20)))
-                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                            + "'%s'. Failed assertions: Expected topic to contain "
-                            + "more than 20 records, but only found 10 after 10000 ms.", topic));
-        }
-
-        @Test
-        void failWhenTopicHasEqualNumberOfRecordsAsParam() {
-            var key = UUID.randomUUID().toString();
-            var topic = "equal-numer-as-param-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> new Thread(() -> {
-                        try {
-                            Thread.sleep(i * 200L);
-                            producer.send(new ProducerRecord<>(topic, key, "value"))
-                                    .get(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).start());
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSizeGreaterThan(10)))
-                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                            + "'%s'. Failed assertions: Expected topic to contain "
-                            + "more than 10 records, but only found 10 after 10000 ms.", topic));
+    private void produce(String topic, int partition, String key, String value) {
+        try {
+            this.producer.send(new ProducerRecord<>(topic, partition, key, value)).get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            throw new RuntimeException(e);
         }
     }
 
-    @Nested
-    class HasSizeLessThan {
-
-        @Test
-        void assertsTopicHasSizeLessThan() {
-            var key = UUID.randomUUID().toString();
-            var topic = "has-size-greater-then-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> {
-                        new Thread(() -> {
-                            try {
-                                Thread.sleep(i * 200L);
-                                producer.send(new ProducerRecord<>(topic, key, "value"))
-                                        .get(5, TimeUnit.SECONDS);
-                            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }).start();
-                    });
-
-            Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSizeLessThan(11));
-        }
-
-        @Test
-        void failWhenTopicHasLessThanMinExpectedSize() {
-            var key = UUID.randomUUID().toString();
-            var topic = "does-not-has-mas-size-topic-" + key;
-            IntStream.range(0, 10)
-                    .forEach(i -> new Thread(() -> {
-                        try {
-                            Thread.sleep(i * 200L);
-                            producer.send(new ProducerRecord<>(topic, key, "value"))
-                                    .get(5, TimeUnit.SECONDS);
-                        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).start());
-
-            assertThatThrownBy(() -> Kassertions.consume(topic, consumer)
-                    .within(Duration.ofSeconds(10))
-                    .untilAsserted(t -> t.hasSizeLessThan(9)))
-                    .hasMessage(String.format("Timeout after 10000 ms while waiting for assertions on topic "
-                            + "'%s'. Failed assertions: Expected topic to contain less than "
-                            + "9 records, but found 9 after 10000 ms.", topic));
-        }
+    private void produceAsync(String topic, String key, String value, long delayMillis) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(delayMillis);
+                produce(topic, key, value);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
     }
 }

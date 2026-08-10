@@ -18,7 +18,7 @@ jobs:
   build:
     strategy:
       matrix:
-        java: [ '17', '21', '23' ]
+        java: [ '17', '21', '23', '24', '25' ]
     runs-on: ubuntu-latest
 
     steps:
@@ -31,3 +31,6 @@ jobs:
           cache: maven
       - name: Build with Maven
         run: mvn -B -ntp verify --file pom.xml
+      - name: Verify release artifacts build (javadoc with markdown comments)
+        if: matrix.java == '25'
+        run: mvn -B -ntp -Prelease package -DskipTests --file pom.xml
