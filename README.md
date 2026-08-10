@@ -1,40 +1,58 @@
-# Usage
-## Example usage 
-Consume until a condition is met or fail after a timeout (5 seconds in this example):
-```java
-Kassertions.consume("topic", consumer)
-    .within(Duration.ofSeconds(5))
-        .untilAsserted(t -> t.containsKey(key));
-```
-## Size based assertions
-The following will **continuously poll the topic for 5 seconds** unless the size is greater than 10, in which case it will fail immediately.
-If by the end of the timeout the size is still not greater than 10, it will also fail otherwise if by then, exactly 10 records are present, it will pass.
+# kassert
+
+Kafka assertion library. Provides fluent assertions over the records received by a `KafkaConsumer`, polling until the assertion is decided or the deadline is reached.
+
+## Example
 
 ```java
-Kassertions.consume("topic", consumer)
-    .within(Duration.ofSeconds(5)).hasSize(10);
+Kassertions.consume(consumer)
+    .assignedTo("orders")                             // assign a topic
+    .fromBeginning()                                  // optional: seek to the beginning
+    .within(5, TimeUnit.SECONDS)                      // optional: deadline (default 5s)
+    .filter(rec -> rec.key().equals("k1"))            // optional, chainable (logical AND)
+    .anySatisfy(rec -> assertThat(rec.value()).isEqualTo("v1"));
 ```
 
-This also applies to `hasSizeGreaterThan(int n)`, `hasSizeLessThan(int n)` and `isEmpty()`.
+The consumer is polled until the deadline, accumulating every record received across all polls. 
+The terminal assertions re-run against the accumulated (and filtered) records on each poll and 
+return as soon as the outcome is decided; on timeout the failure reports the observed records.
 
-# Available Assertions
+## The assertion steps
 
-| Method                                                      | description                                                                                                                   |
-|-------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| `contains(K key, V value)`                                  | Asserts at least one record matches both key and value.                                                                       |
-| `containsKey(K key)`                                        | Asserts a record with the given key is at least once present.                                                                 |
-| `containsValue(V value)`                                    | Asserts a record with a given value is at least once present.                                                                 |
-| `containsExactlyValues(List<V> expected)`                   | TODO                                                                                                                          |
-| `containsExactlyKeys(List<V> expected)`                     | TODO                                                                                                                          |
-| `containsKeysInAnyOrder(List<V> expected)`                  | Asserts a list of records with a given key is present in any order.                                                           |
-| `containsValuesInAnyOrder(List<V> expected)`                | Asserts a list of records with a given value is present in any order.                                                         |
-| `matches(Predicate<List<ConsumerRecord<K, V>>> predicate)`  | TODO                                                                                                                          |
-| `hasKeySatisfying(Predicate<K> predicate)`                  | TODO                                                                                                                          |
-| `hasValueSatisfying(Predicate<V> predicate)`                | TODO                                                                                                                          |
-| `hasSize(int n)`                                            | Asserts that the topic contains exactly the specified number of records at the end of the duration of the timeout.            |
-| `hasSizeGreaterThan(int n)`                                 | Asserts that the topic contains more than n records. Polling stops as soon as this condition is met, even before the timeout. |
-| `hasSizeLessThan(int n)`                                    | Asserts that the topic contains less than n records. Polling stops as soon as this condition fails, even before the timeout.  |
-| `isEmpty()`                                                 | Asserts that the topic is empty at the end of the duration of the timeout.                                                    |
-| `satisfies(Consumer<List<ConsumerRecord<K, V>>> assertion)` | TODO                                                                                                                          |
-| `allSatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | TODO                                                                                                                          |
-| `anySatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | TODO                                                                                                                          |
+### 1. Assign
+
+`Kassertions.consume(consumer)` returns an assignment step:
+
+| Method                                                       | Description                                           |
+|--------------------------------------------------------------|-------------------------------------------------------|
+| `assignedTo(String topic)`                                   | Assigns all partitions of the given topic.            |
+| `assignedTo(String topic, int partition)`                    | Assigns a single partition of the given topic.        |
+| `assignedTo(Collection<TopicPartition> partitions)`          | Assigns the given partitions.                         |
+| `usingCurrentAssignment()`                                   | Uses the consumer's existing assignment.              |
+
+### 2. Position & deadline
+
+| Method                                   | Description                                                                |
+|------------------------------------------|----------------------------------------------------------------------------|
+| `fromBeginning()`                        | Seeks all assigned partitions to the beginning before polling.             |
+| `fromLast(int n)`                        | Seeks every assigned partition `n` records back before its end.            |
+| `within(long timeout, TimeUnit timeUnit)`| Sets the deadline within which the assertion must succeed (default 5s).    |
+
+- `fromBeginning()` and `fromLast(n)` are mutually exclusive; the last call wins.
+- Both require the consumer to be assigned and throw `IllegalStateException` otherwise.
+- `fromLast(n)` seeks each partition `n` records back, clamped to the beginning of the log.
+- When neither is called, the consumer uses its default offset behavior: the group's committed offsets, else `auto.offset.reset` (default `latest`).
+
+### 3. Filter
+
+| Method                                                    | Description                                                  |
+|-----------------------------------------------------------|--------------------------------------------------------------|
+| `filter(Predicate<ConsumerRecord<K, V>> predicate)`       | Restricts the assertion to matching records. Chainable; multiple filters combine with a logical AND. |
+
+### 4. Terminal assertion
+
+| Method                                                      | Description                                                                                                    |
+|-------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| `anySatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | Passes as soon as at least one filtered record satisfies the assertion; fails when the deadline is reached.    |
+| `allSatisfy(Consumer<ConsumerRecord<K, V>> assertion)`      | Passes once every filtered record satisfies; fails at the deadline or if no records matched the filter.        |
+| `noneSatisfy(Consumer<ConsumerRecord<K, V>> assertion)`     | Passes once the deadline is reached with no filtered record satisfying; fails as soon as one does.             |
