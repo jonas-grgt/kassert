@@ -8,6 +8,7 @@
     <artifactId>kassert</artifactId>
     <version>0.1.0</version>
 
+    <name>kassert</name>
     <description>Fluent Kafka Assertion library</description>
     <url>https://github.com/jonas-grgt/kassert</url>
 
