@@ -20,7 +20,7 @@ jobs:
           distribution: 'temurin'
       - name: Bump version
         id: bump
-        run: "./mvnw versions:set -DnewVersion=${{ github.event.inputs.tag }} -DprocessAllModules && ./mvnw versions:commit -DprocessAllModules"
+        run: "./mvnw -ntp versions:set -DnewVersion=${{ github.event.inputs.tag }} -DprocessAllModules && ./mvnw -ntp versions:commit -DprocessAllModules"
       - name: Commit bumped version
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
@@ -40,7 +40,7 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
       - name: Stage Release
-        run: ./mvnw -Prelease deploy -DaltDeploymentRepository=local::file:./target/staging-deploy
+        run: ./mvnw -ntp -Prelease deploy -DaltDeploymentRepository=local::file:./target/staging-deploy
       - name: Release
         env:
           JRELEASER_MAVENCENTRAL_USERNAME: ${{ secrets.JRELEASER_MAVENCENTRAL_USERNAME }}
