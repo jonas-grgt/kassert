@@ -4,6 +4,8 @@ Kafka assertion library. Provides fluent assertions over the records received by
 
 ## Example
 
+All you need it a `org.apache.kafka.clients.consumer.Consumer` to get started.
+
 ```java
 Kassertions.consume(consumer)
     .assignedTo("orders")                             // assign a topic
