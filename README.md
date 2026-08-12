@@ -17,6 +17,20 @@ The consumer is polled until the deadline, accumulating every record received ac
 The terminal assertions re-run against the accumulated (and filtered) records on each poll and 
 return as soon as the outcome is decided; on timeout the failure reports the observed records.
 
+## Installation
+
+```xml
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.jonasg</groupId>
+        <artifactId>kassert</artifactId>
+        <version>${kassert.version}</version>
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
 ## The assertion steps
 
 ### 1. Assign
