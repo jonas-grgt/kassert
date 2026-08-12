@@ -9,6 +9,7 @@
     <version>0.1.0</version>
 
     <description>Fluent Kafka Assertion library</description>
+    <url>https://github.com/jonas-grgt/kassert</url>
 
     <developers>
         <developer>
@@ -252,5 +253,16 @@
             </plugin>
         </plugins>
     </build>
+
+    <distributionManagement>
+        <snapshotRepository>
+            <id>snapshots</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+            <id>release</id>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+    </distributionManagement>
 
 </project>
