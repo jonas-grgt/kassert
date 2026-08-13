@@ -22,15 +22,12 @@ return as soon as the outcome is decided; on timeout the failure reports the obs
 ## Installation
 
 ```xml
-```xml
-<dependencies>
-    <dependency>
-        <groupId>io.jonasg</groupId>
-        <artifactId>kassert</artifactId>
-        <version>${kassert.version}</version>
-        <scope>test</scope>
-    </dependency>
-</dependencies>
+<dependency>
+    <groupId>io.jonasg</groupId>
+    <artifactId>kassert</artifactId>
+    <version>${kassert.version}</version>
+    <scope>test</scope>
+</dependency>
 ```
 
 ## The assertion steps
